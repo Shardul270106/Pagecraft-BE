@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
+const sendEmail = require('../utils/sendEmail');
+const { welcomeEmail, loginAlertEmail } = require('../utils/emailTemplates');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -35,7 +37,6 @@ exports.signup = async (req, res) => {
     const existingUser = await User.findOne({ email: email.toLowerCase() });
 
     if (existingUser) {
-      // matches diagram: "Account already exists" -> route user to login
       return res.status(409).json({
         message: 'Account already exists. Please log in instead.',
         code: 'ACCOUNT_EXISTS',
@@ -52,6 +53,9 @@ exports.signup = async (req, res) => {
     });
 
     const token = generateToken(newUser);
+
+    const { subject, html } = welcomeEmail(newUser.name);
+    sendEmail({ to: newUser.email, subject, html });
 
     return res.status(201).json({
       message: 'Account created successfully.',
@@ -76,14 +80,12 @@ exports.login = async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      // matches diagram: "Account doesn't exist" -> route user to signup
       return res.status(404).json({
         message: "Account doesn't exist. Please sign up first.",
         code: 'ACCOUNT_NOT_FOUND',
       });
     }
 
-    // matches diagram: user signed up with Google, trying local login
     if (user.provider === 'google') {
       return res.status(400).json({
         message: 'This account was created with Google. Please continue with Google.',
@@ -99,6 +101,9 @@ exports.login = async (req, res) => {
 
     const token = generateToken(user);
 
+    const { subject, html } = loginAlertEmail(user.name);
+    sendEmail({ to: user.email, subject, html });
+
     return res.status(200).json({
       message: 'Logged in successfully.',
       token,
@@ -111,7 +116,6 @@ exports.login = async (req, res) => {
 };
 
 // ---------- GOOGLE AUTH (handles both signup + login) ----------
-// Frontend sends the Google ID token (credential) it gets from Google Identity Services
 exports.googleAuth = async (req, res) => {
   try {
     const { credential } = req.body;
@@ -129,25 +133,27 @@ exports.googleAuth = async (req, res) => {
     const { sub: googleId, email, name } = payload;
 
     let user = await User.findOne({ email: email.toLowerCase() });
+    let isNewUser = false;
 
     if (user) {
-      // Exists -> login directly regardless of how they originally signed up,
-      // but keep provider consistent if it was local (optional: link accounts)
       if (user.provider === 'local' && !user.googleId) {
         user.googleId = googleId;
         await user.save();
       }
     } else {
-      // Doesn't exist -> create user
       user = await User.create({
         name,
         email: email.toLowerCase(),
         provider: 'google',
         googleId,
       });
+      isNewUser = true;
     }
 
     const token = generateToken(user);
+
+    const { subject, html } = isNewUser ? welcomeEmail(user.name) : loginAlertEmail(user.name);
+    sendEmail({ to: user.email, subject, html });
 
     return res.status(200).json({
       message: 'Authenticated with Google successfully.',
