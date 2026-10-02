@@ -8,11 +8,26 @@ const sectionSchema = new mongoose.Schema({
   image: { type: String, default: '' },
 }, { _id: false, strict: false });
 
+const canvasElementSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  type: { type: String, enum: ['text', 'image', 'rectangle', 'circle', 'line', 'icon'], required: true },
+  iconName: { type: String, default: 'sparkles' },
+  x: { type: Number, default: 10 },
+  y: { type: Number, default: 12 },
+  width: { type: Number, default: 28 },
+  height: { type: Number, default: 110 },
+  text: { type: String, default: '' },
+  image: { type: String, default: '' },
+  color: { type: String, default: '#222222' },
+  fontSize: { type: Number, default: 32 },
+}, { _id: false });
+
 const portfolioSchema = new mongoose.Schema({
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   title: { type: String, required: true, trim: true, maxlength: 100 },
   templateId: { type: String, default: 'professional-portfolio' },
   sections: { type: [sectionSchema], default: [] },
+  canvasElements: { type: [canvasElementSchema], default: [] },
   templateContent: { type: [String], default: [] },
   templateImages: { type: [String], default: [] },
   theme: {
