@@ -1,18 +1,25 @@
 const mongoose = require('mongoose');
-const dns = require('dns');
 
-// Force Node to use Google/Cloudflare DNS instead of the system default,
-// which fixes SRV lookup failures on some Windows networks
-dns.setServers(['8.8.8.8', '1.1.1.1']);
+const RETRY_DELAY_MS = 5000;
 
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log('MongoDB connected');
-  } catch (error) {
-    console.error('MongoDB connection error:', error.message);
-    process.exit(1);
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function connectDB() {
+  while (mongoose.connection.readyState !== 1) {
+    try {
+      await mongoose.connect(process.env.MONGO_URI, {
+        serverSelectionTimeoutMS: 5000,
+      });
+      console.log('MongoDB connected');
+      return mongoose.connection;
+    } catch (error) {
+      console.error('MongoDB connection unavailable:', error.message);
+      console.log(`Retrying MongoDB connection in ${RETRY_DELAY_MS / 1000} seconds.`);
+      await wait(RETRY_DELAY_MS);
+    }
   }
-};
+
+  return mongoose.connection;
+}
 
 module.exports = connectDB;

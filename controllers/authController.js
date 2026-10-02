@@ -5,6 +5,7 @@ const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
 const { welcomeEmail, loginAlertEmail } = require('../utils/emailTemplates');
 
+
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // ---------- Helper: sign JWT ----------
@@ -29,12 +30,21 @@ function sanitizeUser(user) {
 exports.signup = async (req, res) => {
   try {
     const { name, email, password } = req.body;
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!name || !email || !password) {
+    if (!normalizedName || !normalizedEmail || typeof password !== 'string') {
       return res.status(400).json({ message: 'Name, email, and password are required.' });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (normalizedName.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ message: 'Enter a valid name and email address.' });
+    }
+    if (password.length < 8 || password.length > 128) {
+      return res.status(400).json({ message: 'Password must be between 8 and 128 characters.' });
+    }
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
       return res.status(409).json({
@@ -46,8 +56,8 @@ exports.signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await User.create({
-      name,
-      email: email.toLowerCase(),
+      name: normalizedName,
+      email: normalizedEmail,
       password: hashedPassword,
       provider: 'local',
     });
@@ -63,6 +73,12 @@ exports.signup = async (req, res) => {
       user: sanitizeUser(newUser),
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: 'Account already exists. Please log in instead.',
+        code: 'ACCOUNT_EXISTS',
+      });
+    }
     console.error('Signup error:', error);
     return res.status(500).json({ message: 'Something went wrong during signup.' });
   }
@@ -72,12 +88,13 @@ exports.signup = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!email || !password) {
+    if (!normalizedEmail || typeof password !== 'string') {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       return res.status(404).json({
@@ -131,6 +148,9 @@ exports.googleAuth = async (req, res) => {
 
     const payload = ticket.getPayload();
     const { sub: googleId, email, name } = payload;
+    if (!payload.email_verified || !email) {
+      return res.status(401).json({ message: 'Google account email could not be verified.' });
+    }
 
     let user = await User.findOne({ email: email.toLowerCase() });
     let isNewUser = false;
