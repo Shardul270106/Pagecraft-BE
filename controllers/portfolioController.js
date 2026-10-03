@@ -25,7 +25,8 @@ function cleanSections(sections) {
     if (image && !TEMPLATE_IMAGES.has(image) && !isCloudinaryImage(image) && (!/^data:image\/(png|jpeg|webp|gif);base64,/.test(image) || image.length > 7_000_000)) {
       return { error: 'Images must be PNG, JPEG, WebP, or GIF and no larger than 5 MB.' };
     }
-    cleaned.push({ id: section.id.slice(0, 120), type: section.type, title: String(section.title || '').slice(0, 250), body: String(section.body || '').slice(0, 20000), image });
+    const number = (value) => Math.min(1200, Math.max(-1200, Number.isFinite(Number(value)) ? Number(value) : 0));
+    cleaned.push({ id: section.id.slice(0, 120), type: section.type, title: String(section.title || '').slice(0, 250), body: String(section.body || '').slice(0, 20000), image, contentOffsetX: number(section.contentOffsetX), contentOffsetY: number(section.contentOffsetY) });
   }
   return { sections: cleaned };
 }
@@ -42,12 +43,16 @@ function cleanCanvasElements(elements) {
     if (image.length > 7_000_000) return { error: 'Element images may be up to 5 MB.' };
     const number = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
     const color = /^#[\da-f]{3,8}$/i.test(element.color || '') ? element.color : '#222222';
+    const sectionId = String(element.sectionId || '').slice(0, 120);
+    const width = number(element.width, 28, 4, sectionId ? 100 : 96);
     cleaned.push({
-      id: element.id.slice(0, 120), type: element.type,
-      x: number(element.x, 10, 0, 96), y: number(element.y, 12, 0, 99),
-      width: number(element.width, 28, 4, 96), height: number(element.height, 110, 8, 1200),
+      id: element.id.slice(0, 120), type: element.type, sectionId,
+      x: number(element.x, 10, 0, sectionId ? Math.max(0, 100 - width) : 96), y: number(element.y, 12, 0, 99),
+      width, height: number(element.height, 110, 8, 1200),
       text: String(element.text || '').slice(0, 4000), image, color,
+      imageFit: element.imageFit === 'contain' ? 'contain' : 'cover',
       fontSize: number(element.fontSize, 32, 10, 120),
+      sectionCanvasVersion: number(element.sectionCanvasVersion, 0, 0, 1),
       iconName: iconNames.has(element.iconName) ? element.iconName : 'sparkles',
     });
   }
@@ -74,6 +79,7 @@ function cleanTheme(theme = {}) {
   return {
     accent: validColor(theme.accent, '#e6e51e'),
     background: validColor(theme.background, '#ffffff'),
+    section: theme.section === 'transparent' ? 'transparent' : validColor(theme.section, 'transparent'),
     font: FONTS.has(theme.font) ? theme.font : 'Inter',
     layout: LAYOUTS.has(theme.layout) ? theme.layout : 'modern',
   };
