@@ -4,6 +4,7 @@ const controller = require('../controllers/portfolioController');
 
 const router = express.Router();
 router.get('/public/:slug', controller.publicPage);
+router.post('/public/:slug/view', controller.recordPublicView);
 router.use(requireAuth);
 router.get('/', controller.list);
 router.post('/', controller.create);

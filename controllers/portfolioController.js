@@ -1,4 +1,7 @@
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const Portfolio = require('../models/Portfolio');
+const PortfolioVisitor = require('../models/PortfolioVisitor');
 const User = require('../models/User');
 const { createPortfolioSlug } = require('../utils/portfolioSlug');
 
@@ -213,14 +216,72 @@ exports.publish = async (req, res) => {
 };
 
 exports.publicPage = async (req, res) => {
-  const portfolio = await Portfolio.findOneAndUpdate(
+  const portfolio = await Portfolio.findOne(
     { $or: [{ slug: req.params.slug }, { previousSlugs: req.params.slug }], published: true },
-    { $inc: { visits: 1 } },
-    { new: true },
   ).populate('owner', 'name');
   if (!portfolio) return res.status(404).json({ message: 'This portfolio is not published or no longer exists.' });
   const result = serialize(portfolio);
   result.ownerName = portfolio.owner?.name || '';
   delete result.owner;
   res.json(result);
+};
+
+exports.recordPublicView = async (req, res) => {
+  const portfolio = await Portfolio.findOne({
+    $or: [{ slug: req.params.slug }, { previousSlugs: req.params.slug }],
+    published: true,
+  }).select('_id owner visits').lean();
+  if (!portfolio) return res.status(404).json({ message: 'This portfolio is not published or no longer exists.' });
+
+  const authorization = req.headers.authorization || '';
+  if (authorization.startsWith('Bearer ')) {
+    try {
+      const token = jwt.verify(authorization.slice(7), process.env.JWT_SECRET);
+      if (String(token.id) === String(portfolio.owner)) {
+        return res.json({ counted: false, visits: portfolio.visits, reason: 'owner' });
+      }
+    } catch {
+      // An expired or invalid session is treated as an unauthenticated visit.
+    }
+  }
+
+  const visitorId = String(req.get('X-Pagecraft-Visitor') || '');
+  if (!/^[a-z\d-]{16,80}$/i.test(visitorId)) {
+    return res.status(400).json({ message: 'A valid anonymous visitor ID is required.' });
+  }
+
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const visitorHash = crypto.createHash('sha256').update(visitorId).digest('hex');
+  const visitorFilter = { portfolioId: portfolio._id, visitorHash };
+  const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  const recentVisit = await PortfolioVisitor.findOneAndUpdate(
+    { ...visitorFilter, lastViewedAt: { $gt: cutoff } },
+    { $set: { expiresAt } },
+    { new: true },
+  );
+  if (recentVisit) return res.json({ counted: false, visits: portfolio.visits });
+
+  let eligibleVisit = await PortfolioVisitor.findOneAndUpdate(
+    { ...visitorFilter, lastViewedAt: { $lte: cutoff } },
+    { $set: { lastViewedAt: now, expiresAt } },
+    { new: true },
+  );
+
+  if (!eligibleVisit) {
+    try {
+      eligibleVisit = await PortfolioVisitor.create({ ...visitorFilter, lastViewedAt: now, expiresAt });
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      return res.json({ counted: false, visits: portfolio.visits });
+    }
+  }
+
+  const updated = await Portfolio.findOneAndUpdate(
+    { _id: portfolio._id, published: true },
+    { $inc: { visits: 1 } },
+    { new: true },
+  ).select('visits').lean();
+  return res.json({ counted: Boolean(updated), visits: updated?.visits ?? portfolio.visits });
 };
