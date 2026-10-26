@@ -53,6 +53,7 @@ const portfolioSchema = new mongoose.Schema({
     textScale: { type: Number, default: 100, min: 75, max: 150 },
   },
   slug: { type: String, unique: true, sparse: true, index: true },
+  previousSlugs: { type: [String], default: [] },
   published: { type: Boolean, default: false },
   visits: { type: Number, default: 0 },
 }, { timestamps: true, minimize: false });
