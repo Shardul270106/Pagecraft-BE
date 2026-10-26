@@ -2,8 +2,9 @@ const crypto = require('crypto');
 const Portfolio = require('../models/Portfolio');
 
 const SECTION_TYPES = new Set(['header', 'about', 'services', 'skills', 'technical-skills', 'experience', 'education', 'projects', 'projects-work', 'process', 'outcome', 'testimonials', 'faq', 'gallery', 'contact', 'languages', 'awards', 'references']);
-const TEMPLATE_IDS = new Set(['professional-portfolio', 'developer-portfolio', 'student-resume', 'creative-portfolio', 'ux-case-study', 'photographer-portfolio', 'folio-freelancer', 'grunge-portfolio', 'iportfolio-bootstrap', 'resume-blue-corporate', 'resume-black-white-a4', 'resume-minimalist-cv', 'editorial-studio-portfolio', 'midnight-creative-portfolio', 'product-designer-portfolio', 'architect-portfolio']);
+const TEMPLATE_IDS = new Set(['professional-portfolio', 'developer-portfolio', 'student-resume', 'creative-portfolio', 'ux-case-study', 'photographer-portfolio', 'folio-freelancer', 'grunge-portfolio', 'model-portfolio', 'scrapbook-portfolio', 'resume-blue-corporate', 'resume-black-white-a4', 'resume-minimalist-cv', 'editorial-studio-portfolio', 'midnight-creative-portfolio', 'product-designer-portfolio', 'architect-portfolio']);
 const TEMPLATE_IMAGES = new Set(['/grunge/peter.jpg', '/grunge/peter2.jpg', '/resume-assets/minimalist-cv-avatar.jpg']);
+const isBundledTemplateImage = (value) => TEMPLATE_IMAGES.has(value) || /^\/(?:model|scrapbook)-portfolio\/photo-\d{2}\.webp$/.test(value || '');
 const isCloudinaryImage = (value) => {
   try {
     const url = new URL(value);
@@ -22,11 +23,24 @@ function cleanSections(sections) {
   for (const section of sections) {
     if (!section || !SECTION_TYPES.has(section.type) || typeof section.id !== 'string') return { error: 'A section has an unsupported type or identifier.' };
     const image = section.image || '';
-    if (image && !TEMPLATE_IMAGES.has(image) && !isCloudinaryImage(image) && (!/^data:image\/(png|jpeg|webp|gif);base64,/.test(image) || image.length > 7_000_000)) {
+    if (image && !isBundledTemplateImage(image) && !isCloudinaryImage(image) && (!/^data:image\/(png|jpeg|webp|gif);base64,/.test(image) || image.length > 7_000_000)) {
       return { error: 'Images must be PNG, JPEG, WebP, or GIF and no larger than 5 MB.' };
     }
+    const galleryImages = Array.isArray(section.galleryImages) ? section.galleryImages.map((value) => String(value || '')) : [];
+    if (galleryImages.length > 30) return { error: 'A photo gallery can contain up to 30 images.' };
+    if (galleryImages.some((value) => value && !isBundledTemplateImage(value) && !isCloudinaryImage(value) && (!/^data:image\/(png|jpeg|webp|gif);base64,/.test(value) || value.length > 7_000_000))) {
+      return { error: 'Gallery images must be PNG, JPEG, WebP, or GIF and no larger than 5 MB.' };
+    }
+    if (galleryImages.reduce((total, value) => total + value.length, 0) > 7_000_000) return { error: 'Gallery image uploads may total up to 5 MB.' };
     const number = (value) => Math.min(1200, Math.max(-1200, Number.isFinite(Number(value)) ? Number(value) : 0));
-    cleaned.push({ id: section.id.slice(0, 120), type: section.type, title: String(section.title || '').slice(0, 250), body: String(section.body || '').slice(0, 20000), image, contentOffsetX: number(section.contentOffsetX), contentOffsetY: number(section.contentOffsetY) });
+    const cropNumber = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
+    const galleryImageSettings = Array.isArray(section.galleryImageSettings) ? section.galleryImageSettings.slice(0, 30).map((crop) => ({
+      zoom: cropNumber(crop?.zoom, 100, 100, 250),
+      x: cropNumber(crop?.x, 50, 0, 100),
+      y: cropNumber(crop?.y, 50, 0, 100),
+    })) : [];
+    const fontSize = (value, min, max) => value ? Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : min)) : 0;
+    cleaned.push({ id: section.id.slice(0, 120), type: section.type, title: String(section.title || '').slice(0, 250), body: String(section.body || '').slice(0, 20000), image, imageZoom: cropNumber(section.imageZoom, 100, 100, 250), imagePositionX: cropNumber(section.imagePositionX, 50, 0, 100), imagePositionY: cropNumber(section.imagePositionY, 50, 0, 100), galleryImages, galleryImageSettings, titleFontSize: fontSize(section.titleFontSize, 16, 120), bodyFontSize: fontSize(section.bodyFontSize, 10, 60), contentOffsetX: number(section.contentOffsetX), contentOffsetY: number(section.contentOffsetY) });
   }
   return { sections: cleaned };
 }
@@ -51,6 +65,9 @@ function cleanCanvasElements(elements) {
       width, height: number(element.height, 110, 8, 1200),
       text: String(element.text || '').slice(0, 4000), image, color,
       imageFit: element.imageFit === 'contain' ? 'contain' : 'cover',
+      imageZoom: number(element.imageZoom, 100, 100, 250),
+      imagePositionX: number(element.imagePositionX, 50, 0, 100),
+      imagePositionY: number(element.imagePositionY, 50, 0, 100),
       fontSize: number(element.fontSize, 32, 10, 120),
       sectionCanvasVersion: number(element.sectionCanvasVersion, 0, 0, 1),
       iconName: iconNames.has(element.iconName) ? element.iconName : 'sparkles',
@@ -74,6 +91,12 @@ function cleanTemplateImages(images) {
   return { images: cleaned };
 }
 
+function cleanTemplateImageSettings(settings) {
+  if (!Array.isArray(settings) || settings.length > 30) return { error: 'Template image settings are too large.' };
+  const cropNumber = (value, fallback, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : fallback));
+  return { settings: settings.map((crop) => ({ zoom: cropNumber(crop?.zoom, 100, 100, 250), x: cropNumber(crop?.x, 50, 0, 100), y: cropNumber(crop?.y, 50, 0, 100) })) };
+}
+
 function cleanTheme(theme = {}) {
   const validColor = (value, fallback) => /^#[\da-f]{3,8}$/i.test(value || '') ? value : fallback;
   return {
@@ -82,6 +105,7 @@ function cleanTheme(theme = {}) {
     section: theme.section === 'transparent' ? 'transparent' : validColor(theme.section, 'transparent'),
     font: FONTS.has(theme.font) ? theme.font : 'Inter',
     layout: LAYOUTS.has(theme.layout) ? theme.layout : 'modern',
+    textScale: Math.min(150, Math.max(75, Number.isFinite(Number(theme.textScale)) ? Number(theme.textScale) : 100)),
   };
 }
 
@@ -91,7 +115,7 @@ exports.list = async (req, res) => {
 };
 
 exports.create = async (req, res) => {
-  const { title, templateId, sections, theme, templateContent, templateImages, canvasElements } = req.body;
+  const { title, templateId, sections, theme, templateContent, templateImages, templateImageSettings, canvasElements } = req.body;
   if (!title?.trim()) return res.status(400).json({ message: 'Give your portfolio a name.' });
   const result = cleanSections(sections || []);
   if (result.error) return res.status(400).json({ message: result.error });
@@ -99,9 +123,11 @@ exports.create = async (req, res) => {
   if (templateResult.error) return res.status(400).json({ message: templateResult.error });
   const imageResult = templateImages === undefined ? { images: [] } : cleanTemplateImages(templateImages);
   if (imageResult.error) return res.status(400).json({ message: imageResult.error });
+  const imageSettingsResult = templateImageSettings === undefined ? { settings: [] } : cleanTemplateImageSettings(templateImageSettings);
+  if (imageSettingsResult.error) return res.status(400).json({ message: imageSettingsResult.error });
   const elementsResult = canvasElements === undefined ? { elements: [] } : cleanCanvasElements(canvasElements);
   if (elementsResult.error) return res.status(400).json({ message: elementsResult.error });
-  const portfolio = await Portfolio.create({ owner: req.user._id, title: title.trim().slice(0, 100), templateId: TEMPLATE_IDS.has(templateId) ? templateId : 'professional-portfolio', sections: result.sections, canvasElements: elementsResult.elements, theme: cleanTheme(theme), templateContent: templateResult.content, templateImages: imageResult.images });
+  const portfolio = await Portfolio.create({ owner: req.user._id, title: title.trim().slice(0, 100), templateId: TEMPLATE_IDS.has(templateId) ? templateId : 'professional-portfolio', sections: result.sections, canvasElements: elementsResult.elements, theme: cleanTheme(theme), templateContent: templateResult.content, templateImages: imageResult.images, templateImageSettings: imageSettingsResult.settings });
   res.status(201).json(serialize(portfolio));
 };
 
@@ -112,7 +138,7 @@ exports.get = async (req, res) => {
 };
 
 exports.update = async (req, res) => {
-  const { title, templateId, sections, theme, templateContent, templateImages, canvasElements } = req.body;
+  const { title, templateId, sections, theme, templateContent, templateImages, templateImageSettings, canvasElements } = req.body;
   const portfolio = await Portfolio.findOne({ _id: req.params.id, owner: req.user._id });
   if (!portfolio) return res.status(404).json({ message: 'Portfolio not found.' });
   if (title !== undefined) portfolio.title = String(title).trim().slice(0, 100) || portfolio.title;
@@ -138,6 +164,11 @@ exports.update = async (req, res) => {
     if (result.error) return res.status(400).json({ message: result.error });
     portfolio.templateImages = result.images;
   }
+  if (templateImageSettings !== undefined) {
+    const result = cleanTemplateImageSettings(templateImageSettings);
+    if (result.error) return res.status(400).json({ message: result.error });
+    portfolio.templateImageSettings = result.settings;
+  }
   await portfolio.save();
   res.json(serialize(portfolio));
 };
@@ -160,6 +191,7 @@ exports.duplicate = async (req, res) => {
     theme: source.theme,
     templateContent: source.templateContent,
     templateImages: source.templateImages,
+    templateImageSettings: source.templateImageSettings,
   });
   res.status(201).json(serialize(copy));
 };
