@@ -44,7 +44,24 @@ function cleanSections(sections) {
       y: cropNumber(crop?.y, 50, 0, 100),
     })) : [];
     const fontSize = (value, min, max) => value ? Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : min)) : 0;
-    cleaned.push({ id: section.id.slice(0, 120), type: section.type, title: String(section.title || '').slice(0, 250), body: String(section.body || '').slice(0, 20000), image, imageZoom: cropNumber(section.imageZoom, 100, 100, 250), imagePositionX: cropNumber(section.imagePositionX, 50, 0, 100), imagePositionY: cropNumber(section.imagePositionY, 50, 0, 100), galleryImages, galleryImageSettings, titleFontSize: fontSize(section.titleFontSize, 16, 120), bodyFontSize: fontSize(section.bodyFontSize, 10, 60), contentOffsetX: number(section.contentOffsetX), contentOffsetY: number(section.contentOffsetY) });
+    const body = String(section.body || '').slice(0, 20000);
+    const bodyLinks = Array.isArray(section.bodyLinks) ? section.bodyLinks.slice(0, 100).flatMap((link) => {
+      const start = Number(link?.start);
+      const end = Number(link?.end);
+      const href = String(link?.href || '').trim().slice(0, 2048);
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > body.length || !href) return [];
+      try {
+        const parsed = new URL(href);
+        if (!['http:', 'https:', 'mailto:', 'tel:'].includes(parsed.protocol)) return [];
+        return [{ start, end, href: parsed.href }];
+      } catch {
+        return [];
+      }
+    }).sort((left, right) => left.start - right.start).reduce((valid, link) => {
+      if (!valid.length || link.start >= valid[valid.length - 1].end) valid.push(link);
+      return valid;
+    }, []) : [];
+    cleaned.push({ id: section.id.slice(0, 120), type: section.type, title: String(section.title || '').slice(0, 250), body, bodyLinks, image, imageZoom: cropNumber(section.imageZoom, 100, 100, 250), imagePositionX: cropNumber(section.imagePositionX, 50, 0, 100), imagePositionY: cropNumber(section.imagePositionY, 50, 0, 100), galleryImages, galleryImageSettings, titleFontSize: fontSize(section.titleFontSize, 16, 120), bodyFontSize: fontSize(section.bodyFontSize, 10, 60), contentOffsetX: number(section.contentOffsetX), contentOffsetY: number(section.contentOffsetY) });
   }
   return { sections: cleaned };
 }
