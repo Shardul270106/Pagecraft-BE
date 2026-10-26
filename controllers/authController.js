@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
+const Portfolio = require('../models/Portfolio');
+const { slugify, createPortfolioSlug } = require('../utils/portfolioSlug');
 const sendEmail = require('../utils/sendEmail');
 const { welcomeEmail, loginAlertEmail, passwordResetEmail } = require('../utils/emailTemplates');
 
@@ -24,8 +26,39 @@ function sanitizeUser(user) {
     name: user.name,
     email: user.email,
     provider: user.provider,
+    publicSlug: user.publicSlug || '',
   };
 }
+
+exports.getProfile = async (req, res) => {
+  res.json({ user: sanitizeUser(req.user) });
+};
+
+exports.updateProfile = async (req, res) => {
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const publicSlug = typeof req.body.publicSlug === 'string' ? slugify(req.body.publicSlug) : '';
+  if (!name || name.length > 100) return res.status(400).json({ message: 'Your name must be between 1 and 100 characters.' });
+  if (req.body.publicSlug && (!publicSlug || publicSlug.length < 3 || publicSlug.length > 48)) {
+    return res.status(400).json({ message: 'URL name must be 3–48 letters or numbers.' });
+  }
+
+  const previousBase = req.user.publicSlug || slugify(req.user.name) || 'portfolio';
+  const nextBase = publicSlug || slugify(name) || 'portfolio';
+  req.user.name = name;
+  req.user.publicSlug = publicSlug;
+  await req.user.save();
+
+  if (previousBase !== nextBase) {
+    const portfoliosWithPublicSlugs = await Portfolio.find({ owner: req.user._id, slug: { $exists: true, $ne: '' } });
+    for (const portfolio of portfoliosWithPublicSlugs) {
+      if (portfolio.slug && !portfolio.previousSlugs.includes(portfolio.slug)) portfolio.previousSlugs.push(portfolio.slug);
+      portfolio.slug = await createPortfolioSlug(nextBase, portfolio._id);
+      await portfolio.save();
+    }
+  }
+
+  res.json({ message: 'Profile updated.', user: sanitizeUser(req.user) });
+};
 
 // ---------- SIGNUP (local, email + password) --------
 exports.signup = async (req, res) => {

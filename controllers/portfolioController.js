@@ -1,6 +1,6 @@
-const crypto = require('crypto');
 const Portfolio = require('../models/Portfolio');
 const User = require('../models/User');
+const { createPortfolioSlug } = require('../utils/portfolioSlug');
 
 const SECTION_TYPES = new Set(['header', 'about', 'services', 'skills', 'technical-skills', 'experience', 'education', 'projects', 'projects-work', 'process', 'outcome', 'testimonials', 'faq', 'gallery', 'contact', 'languages', 'awards', 'references']);
 const TEMPLATE_IDS = new Set(['professional-portfolio', 'developer-portfolio', 'student-resume', 'creative-portfolio', 'ux-case-study', 'photographer-portfolio', 'folio-freelancer', 'grunge-portfolio', 'model-portfolio', 'scrapbook-portfolio', 'resume-blue-corporate', 'resume-black-white-a4', 'resume-minimalist-cv', 'editorial-studio-portfolio', 'midnight-creative-portfolio', 'product-designer-portfolio', 'architect-portfolio', 'blue-creative-portfolio']);
@@ -17,30 +17,6 @@ const isCloudinaryImage = (value) => {
 const FONTS = new Set(['Inter', 'Poppins', 'DM Sans', 'Manrope', 'Space Grotesk', 'Montserrat', 'Playfair Display', 'Lora', 'Merriweather', 'Source Sans 3', 'Oswald', 'Georgia']);
 const LAYOUTS = new Set(['modern', 'editorial', 'compact', 'folio', 'grunge', 'iportfolio', 'resume-blue-corporate', 'resume-black-white-a4', 'resume-minimalist-cv']);
 const serialize = (portfolio) => ({ ...portfolio.toObject(), id: portfolio._id.toString() });
-
-const slugify = (value) => value
-  .normalize('NFKD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-|-$/g, '')
-  .slice(0, 48)
-  .replace(/-$/g, '');
-
-async function createPublicSlug(portfolio) {
-  const owner = await User.findById(portfolio.owner).select('name').lean();
-  const name = slugify(owner?.name || portfolio.title) || 'portfolio';
-
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const slug = `${name}-${crypto.randomBytes(2).toString('hex')}`;
-    const exists = await Portfolio.exists({ slug, _id: { $ne: portfolio._id } });
-    if (!exists) return slug;
-  }
-
-  // Keep collision handling robust even in the unlikely event that all short
-  // codes are taken for this name.
-  return `${name}-${crypto.randomBytes(4).toString('hex')}`;
-}
 
 function cleanSections(sections) {
   if (!Array.isArray(sections) || sections.length > 50) return { error: 'A portfolio can contain up to 50 sections.' };
@@ -227,7 +203,8 @@ exports.publish = async (req, res) => {
   const shouldPublish = req.body.published !== false;
   if (shouldPublish && (!portfolio.slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{4}$/.test(portfolio.slug))) {
     if (portfolio.slug && !portfolio.previousSlugs.includes(portfolio.slug)) portfolio.previousSlugs.push(portfolio.slug);
-    portfolio.slug = await createPublicSlug(portfolio);
+    const owner = await User.findById(portfolio.owner).select('name publicSlug').lean();
+    portfolio.slug = await createPortfolioSlug(owner?.publicSlug || owner?.name || portfolio.title, portfolio._id);
   }
   portfolio.published = shouldPublish;
   await portfolio.save();

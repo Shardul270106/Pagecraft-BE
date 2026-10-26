@@ -7,6 +7,13 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    publicSlug: {
+      type: String,
+      default: '',
+      trim: true,
+      lowercase: true,
+      maxlength: 48,
+    },
     email: {
       type: String,
       required: true,

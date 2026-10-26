@@ -8,7 +8,7 @@ module.exports = async function requireAuth(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(payload.id).select('_id name email provider');
+    const user = await User.findById(payload.id).select('_id name email provider publicSlug');
     if (!user) return res.status(401).json({ message: 'Your account could not be found.' });
     req.user = user;
     next();
