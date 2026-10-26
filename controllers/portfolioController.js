@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const Portfolio = require('../models/Portfolio');
 
 const SECTION_TYPES = new Set(['header', 'about', 'services', 'skills', 'technical-skills', 'experience', 'education', 'projects', 'projects-work', 'process', 'outcome', 'testimonials', 'faq', 'gallery', 'contact', 'languages', 'awards', 'references']);
-const TEMPLATE_IDS = new Set(['professional-portfolio', 'developer-portfolio', 'student-resume', 'creative-portfolio', 'ux-case-study', 'photographer-portfolio', 'folio-freelancer', 'grunge-portfolio', 'model-portfolio', 'scrapbook-portfolio', 'resume-blue-corporate', 'resume-black-white-a4', 'resume-minimalist-cv', 'editorial-studio-portfolio', 'midnight-creative-portfolio', 'product-designer-portfolio', 'architect-portfolio']);
+const TEMPLATE_IDS = new Set(['professional-portfolio', 'developer-portfolio', 'student-resume', 'creative-portfolio', 'ux-case-study', 'photographer-portfolio', 'folio-freelancer', 'grunge-portfolio', 'model-portfolio', 'scrapbook-portfolio', 'resume-blue-corporate', 'resume-black-white-a4', 'resume-minimalist-cv', 'editorial-studio-portfolio', 'midnight-creative-portfolio', 'product-designer-portfolio', 'architect-portfolio', 'blue-creative-portfolio']);
 const TEMPLATE_IMAGES = new Set(['/grunge/peter.jpg', '/grunge/peter2.jpg', '/resume-assets/minimalist-cv-avatar.jpg']);
 const isBundledTemplateImage = (value) => TEMPLATE_IMAGES.has(value) || /^\/(?:model|scrapbook)-portfolio\/photo-\d{2}\.webp$/.test(value || '');
 const isCloudinaryImage = (value) => {
