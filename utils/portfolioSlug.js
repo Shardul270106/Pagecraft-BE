@@ -14,7 +14,10 @@ async function createPortfolioSlug(value, excludeId) {
   const base = slugify(value) || 'portfolio';
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const slug = `${base}-${crypto.randomBytes(2).toString('hex')}`;
-    const exists = await Portfolio.exists({ slug, ...(excludeId ? { _id: { $ne: excludeId } } : {}) });
+    const exists = await Portfolio.exists({
+      $or: [{ slug }, { previousSlugs: slug }],
+      ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+    });
     if (!exists) return slug;
   }
   return `${base}-${crypto.randomBytes(4).toString('hex')}`;
